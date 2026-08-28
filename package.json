@@ -7,6 +7,10 @@
     "build": "prisma generate && next build",
     "start": "next build && next start -p 4000",
     "lint": "eslint",
+    "verify:db": "tsx scripts/verify-all.ts",
+    "check:render": "next build && node --import tsx --conditions=react-server scripts/render-check.ts",
+    "check:render:prebuilt": "node --import tsx --conditions=react-server scripts/render-check.ts",
+    "ci:secrets": "tsx scripts/ci-secrets.ts",
     "db:pull": "prisma db pull && prisma generate",
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
@@ -23,7 +27,6 @@
     "db:catalog-check": "node --import tsx --conditions=react-server scripts/catalog-check.ts",
     "db:stock-check": "node --import tsx --conditions=react-server scripts/stock-integrity-check.ts",
     "db:price-check": "node --import tsx --conditions=react-server scripts/price-history-check.ts",
-    "check:render": "next build && node --import tsx --conditions=react-server scripts/render-check.ts",
     "db:void-check": "node --import tsx --conditions=react-server scripts/void-check.ts",
     "db:image-check": "node --import tsx --conditions=react-server scripts/image-check.ts",
     "db:checkout-check": "node --import tsx --conditions=react-server scripts/checkout-check.ts",
@@ -54,5 +57,8 @@
     "tailwindcss": "^4",
     "tsx": "^4.23.12",
     "typescript": "^5"
+  },
+  "engines": {
+    "node": ">=20.9.0"
   }
 }

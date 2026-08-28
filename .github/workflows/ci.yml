@@ -1,0 +1,214 @@
+name: CI
+
+# Every branch is verified. Only main deploys.
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main]
+
+# Least privilege: nothing here writes to the repository.
+permissions:
+  contents: read
+
+# Pushing again to a feature branch supersedes the run in flight. A run on main
+# is never cancelled — it can be mid-deploy, and half a deploy is worse than a
+# slow one.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  # ---------------------------------------------------------------- verify
+  # Types, lint and a production build. Touches no external service, so it runs
+  # on every branch in parallel with no coordination.
+  verify:
+    name: Types, lint, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # prisma.config.ts resolves env("DIRECT_URL") when the CLI loads, and
+      # next.config.ts derives the image host from the Supabase URL. Neither
+      # step connects to anything; they only need the values to be present.
+      DIRECT_URL: ${{ secrets.DIRECT_URL }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # Generated into lib/generated, which is gitignored — nothing typechecks
+      # until this has run.
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      # Turbopack's cache turns a cold ~40s build into a few seconds. Keyed on
+      # the lockfile and the source, so it is reused until one of them changes.
+      - name: Restore Next build cache
+        uses: actions/cache@v4
+        with:
+          path: .next/cache
+          key: next-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('app/**', 'lib/**', '*.ts', '*.mjs') }}
+          restore-keys: |
+            next-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
+            next-${{ runner.os }}-
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npx eslint app lib scripts
+
+      # `npx next build`, not `npm run build`, because that script re-runs
+      # prisma generate which already happened above.
+      - name: Build
+        run: npx next build
+
+      # Handed to the regression job so it can run the render checks against
+      # this exact build instead of producing its own.
+      - name: Upload build
+        uses: actions/upload-artifact@v4
+        with:
+          name: next-build
+          # ~28MB. Two directories are excluded: "cache" is a build accelerator
+          # the next job never reads, and "dev" is left behind by a local
+          # `next dev` run — absent on a fresh runner, but excluded so that
+          # running this workflow locally does not try to ship 500MB.
+          path: |
+            .next
+            !.next/cache
+            !.next/dev
+          retention-days: 1
+          include-hidden-files: true
+
+  # -------------------------------------------------------------- regression
+  # The suites write to the live database — they create orders, move stock and
+  # edit prices, restoring everything at the end.
+  regression:
+    name: Database and render regression
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    # Serialised across EVERY branch, not per-ref. Two runs against one database
+    # would interleave their writes and each would report the other's edits as
+    # failures. Never cancelled: a suite killed mid-run leaves its probe data
+    # behind, because cleanup lives in a finally block that never executes.
+    concurrency:
+      group: production-database
+      cancel-in-progress: false
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DIRECT_URL: ${{ secrets.DIRECT_URL }}
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
+      ADMIN_SIGNUP_CODE: ${{ secrets.ADMIN_SIGNUP_CODE }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
+      RENDER_CHECK_EMAIL: ${{ secrets.RENDER_CHECK_EMAIL }}
+      RENDER_CHECK_PASSWORD: ${{ secrets.RENDER_CHECK_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Download build
+        uses: actions/download-artifact@v4
+        with:
+          name: next-build
+          path: .next
+
+      # The question this answers is "is the database reachable at all". Kept
+      # separate so a network or credential problem is not reported as a
+      # business-logic failure thirteen suites later.
+      - name: Database reachable
+        run: npm run db:smoke
+
+      - name: Regression suites
+        run: npm run verify:db
+
+      # Boots the build from the verify job and inspects the HTML and the
+      # shipped client JavaScript. The `:prebuilt` variant skips the rebuild.
+      - name: Render and client-bundle checks
+        run: npm run check:render:prebuilt
+
+  # ---------------------------------------------------------------- deploy
+  deploy:
+    name: Deploy to Vercel
+    needs: regression
+    # Only a real push to main. A pull request targeting main must not deploy,
+    # and neither must any other branch.
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install Vercel CLI
+        run: npm i -g vercel@latest
+
+      # Pulls the project's PRODUCTION environment variables from Vercel. The
+      # app's runtime configuration lives there, not in GitHub — the secrets
+      # above exist so CI can reach the database, not to configure the app.
+      - name: Pull Vercel environment
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Build
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+
+      # --prebuilt uploads the artifact built above rather than rebuilding on
+      # Vercel, so what was verified is what ships.
+      - name: Deploy
+        id: deploy
+        run: |
+          url=$(vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }})
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Deployed to $url"
+
+      # A deploy that returns 500 is not a successful deploy. This is the last
+      # gate: if the live site does not serve, the job fails and the run is red.
+      - name: Smoke test the deployment
+        run: |
+          url="${{ steps.deploy.outputs.url }}"
+          for path in "/" "/shop"; do
+            code=$(curl -sS -o /dev/null -w "%{http_code}" --retry 5 --retry-delay 3 \
+                     --retry-all-errors --max-time 30 "$url$path")
+            echo "$path -> $code"
+            [ "$code" = "200" ] || { echo "::error::$path returned $code"; exit 1; }
+          done
+
+      - name: Summary
+        run: |
+          {
+            echo "### Deployed"
+            echo ""
+            echo "- **URL:** ${{ steps.deploy.outputs.url }}"
+            echo "- **Commit:** \`${{ github.sha }}\`"
+            echo "- Verified: types, lint, build, 13 database suites, render and bundle checks."
+          } >> "$GITHUB_STEP_SUMMARY"
