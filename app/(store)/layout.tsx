@@ -4,6 +4,22 @@ import SiteFooter from "./_components/site-footer";
 import SiteHeader from "./_components/site-header";
 
 /**
+ * Nothing under this layout is ever prerendered.
+ *
+ * Every storefront page reads live prices and stock, and this layout itself
+ * queries settings and branches on every route beneath it. The individual pages
+ * call `connection()`, but a layout runs for all of them and had no such guard,
+ * so `next build` was querying the database while generating pages — which made
+ * a reachable database a BUILD requirement, not just a runtime one.
+ *
+ * That only showed up off this machine: a CI runner or a Vercel build without
+ * database access failed at "Generating static pages" with P1001. Declaring the
+ * segment dynamic once here is stronger than a `connection()` call per page,
+ * because it also covers the layout and anything added later.
+ */
+export const dynamic = "force-dynamic";
+
+/**
  * The customer-facing shell.
  *
  * A route group, so these pages sit at `/` and `/shop` while keeping a layout
