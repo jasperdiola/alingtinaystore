@@ -1,0 +1,285 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  /* Storefront face. The admin keeps Geist; only the customer shell opts in. */
+  --font-display: var(--font-dm-sans);
+}
+
+/* ---------------------------------------------------------------------------
+   Storefront brand palette.
+   
+   Declared as real theme colors rather than repeated as bg-[#C68642] literals:
+   arbitrary values cannot be tuned in one place, do not compose with opacity
+   modifiers cleanly, and give a reader no idea what the colour MEANS. The names
+   match the ones the seeded `features.accent_class` values already reference
+   (peanut / roasted / beige), so database-authored styling lines up with CSS.
+   ------------------------------------------------------------------------- */
+@theme {
+  --color-cream: #f8f3e9;   /* page ground */
+  --color-peanut: #c68642;  /* primary accent — labels, links, active state */
+  --color-roasted: #5c3b1e; /* deep brown — hero, footer */
+  --color-beige: #e7d3b1;   /* warm tint for alternating bands */
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+/* ---------------------------------------------------------------------------
+   Data-visualisation tokens.
+
+   Validated with the dataviz validator against the ACTUAL card surfaces
+   (#ffffff light, #171717 dark), all-pairs, both modes — all checks pass.
+   Light mode returns one WARN: --viz-3 (aqua) sits at 2.82:1, which obligates
+   relief. Every chart using it therefore ships visible direct labels plus a
+   table view. Do not add a 4th categorical slot: three is the all-pairs cap.
+
+   Slots are assigned to ENTITIES (store 1/2/3), never to rank, so filtering a
+   series out never repaints the survivors.
+--------------------------------------------------------------------------- */
+:root {
+  --viz-1: #2a78d6; /* blue   — store 1, and the single-series default */
+  --viz-2: #eb6834; /* orange — store 2 */
+  --viz-3: #1baf7a; /* aqua   — store 3 */
+
+  --viz-grid: #e1e0d9;
+  --viz-axis: #c3c2b7;
+  --viz-muted: #898781;
+  --viz-good: #006300;
+  --viz-bad: #d03b3b;
+  --viz-surface: #ffffff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --viz-1: #3987e5;
+    --viz-2: #d95926;
+    --viz-3: #199e70;
+
+    --viz-grid: #2c2c2a;
+    --viz-axis: #383835;
+    --viz-muted: #898781;
+    --viz-good: #0ca30c;
+    --viz-bad: #e66767;
+    --viz-surface: #171717;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Print — invoices.
+
+   The admin shell (sidebar, topbar, toolbars) is chrome for the screen; on
+   paper it is noise that also steals a column of width. Anything marked
+   data-print-hide disappears, and the invoice article is promoted out of the
+   flex layout so it can use the full page.
+--------------------------------------------------------------------------- */
+@media print {
+  @page {
+    size: A4;
+    margin: 14mm;
+  }
+
+  [data-print-hide] {
+    display: none !important;
+  }
+
+  /* Force light ink regardless of the admin's colour scheme — printing a dark
+     theme wastes toner and reads badly. */
+  html,
+  body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  /* Neutralise the shell's flex/scroll containers so the document is not
+     confined to the main column's box. */
+  body * {
+    overflow: visible !important;
+  }
+
+  [data-invoice] {
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 100%;
+    background: #fff !important;
+    color: #000 !important;
+    box-shadow: none !important;
+  }
+
+  /* Keep a line item and its price on the same page. */
+  [data-invoice] tr,
+  [data-invoice] dl {
+    break-inside: avoid;
+  }
+
+  [data-invoice] thead {
+    display: table-header-group;
+  }
+
+  a[href]::after {
+    content: none !important;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Responsive data tables.
+
+   A 720px table inside a 398px phone viewport means horizontal scrolling to
+   read a single row, which is how people miss the column that mattered. Below
+   the `sm` breakpoint each row reflows into a stacked card: the header row is
+   hidden and every cell carries its own label from `data-label`.
+
+   Add `rtable` to the <table> and `data-label="…"` to each <td>. Cells with
+   `data-label=""` render full-width with no label (used for the primary cell
+   and for action buttons).
+--------------------------------------------------------------------------- */
+@media (max-width: 639px) {
+  table.rtable,
+  table.rtable tbody,
+  table.rtable tr,
+  table.rtable td {
+    display: block;
+    width: 100%;
+  }
+
+  table.rtable thead {
+    /* Visually hidden, still announced in the accessibility tree. */
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  table.rtable tr {
+    padding: 0.75rem 1rem;
+  }
+
+  table.rtable td {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.25rem 0 !important;
+    text-align: left !important;
+  }
+
+  table.rtable td[data-label]:not([data-label=""])::before {
+    content: attr(data-label);
+    flex: 0 0 auto;
+    font-size: 0.6875rem;
+    line-height: 1.4;
+    color: var(--viz-muted);
+  }
+
+  /* The primary cell (name, code) leads the card at full width. */
+  table.rtable td[data-label=""] {
+    display: block;
+    padding-bottom: 0.375rem !important;
+  }
+
+  /* Right-aligned desktop cells read better as a labelled pair on mobile. */
+  table.rtable td > div,
+  table.rtable td > span {
+    text-align: right;
+  }
+  table.rtable td[data-label=""] > div,
+  table.rtable td[data-label=""] > span {
+    text-align: left;
+  }
+}
+
+
+/* ---------------------------------------------------------------------------
+   Storefront utilities.
+
+   Three things Tailwind has no primitive for. Kept here rather than repeated
+   inline because each is used on many surfaces and must stay identical across
+   them.
+   ------------------------------------------------------------------------- */
+
+/* Frosted panel used for cards laid over photography or a tinted band. */
+.glass-card {
+  background: rgb(255 255 255 / 0.45);
+  border: 1px solid rgb(255 255 255 / 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.glass-card-strong {
+  background: rgb(255 255 255 / 0.65);
+  border: 1px solid rgb(255 255 255 / 0.7);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+@keyframes marquee {
+  from { transform: translateX(0); }
+  /* -50% because the track renders its children twice; see Marquee. */
+  to   { transform: translateX(-50%); }
+}
+
+.animate-marquee {
+  animation: marquee 40s linear infinite;
+}
+/* Pausing on hover is what makes a moving testimonial readable at all. */
+.animate-marquee:hover {
+  animation-play-state: paused;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-10px); }
+}
+.animate-float { animation: float 6s ease-in-out infinite; }
+
+/*
+ * Respect the OS setting. Marquees and floats are exactly the kind of
+ * continuous motion that triggers vestibular discomfort, and this is a whole
+ * page of it.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .animate-marquee,
+  .animate-float {
+    animation: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Scroll-reveal safety net.
+
+   Reveal starts its children at opacity 0 and animates them in. Two ways that
+   could strand content permanently, both closed here rather than in JS:
+
+   1. Scripting off. The <noscript> rule in the store layout forces every
+      revealed element visible, so the page still reads as a plain document.
+   2. Reduced motion. A page-long cascade of movement is precisely what the
+      setting opts out of, so elements simply appear.
+   ------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  [data-reveal] {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+}
