@@ -31,7 +31,8 @@
     "db:image-check": "node --import tsx --conditions=react-server scripts/image-check.ts",
     "db:checkout-check": "node --import tsx --conditions=react-server scripts/checkout-check.ts",
     "db:shop-check": "node --import tsx --conditions=react-server scripts/shop-check.ts",
-    "db:set-qr": "node --import tsx --conditions=react-server scripts/set-payment-qr.ts"
+    "db:set-qr": "node --import tsx --conditions=react-server scripts/set-payment-qr.ts",
+    "vercel:env": "tsx scripts/vercel-env.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.9.1",

@@ -36,9 +36,9 @@ jobs:
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
       SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -54,7 +54,7 @@ jobs:
       # Turbopack's cache turns a cold ~40s build into a few seconds. Keyed on
       # the lockfile and the source, so it is reused until one of them changes.
       - name: Restore Next build cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .next/cache
           key: next-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('app/**', 'lib/**', '*.ts', '*.mjs') }}
@@ -76,7 +76,7 @@ jobs:
       # Handed to the regression job so it can run the render checks against
       # this exact build instead of producing its own.
       - name: Upload build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: next-build
           # ~28MB. Two directories are excluded: "cache" is a build accelerator
@@ -117,9 +117,9 @@ jobs:
       RENDER_CHECK_EMAIL: ${{ secrets.RENDER_CHECK_EMAIL }}
       RENDER_CHECK_PASSWORD: ${{ secrets.RENDER_CHECK_PASSWORD }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -131,7 +131,7 @@ jobs:
         run: npx prisma generate
 
       - name: Download build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: next-build
           path: .next
@@ -163,9 +163,9 @@ jobs:
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: npm
