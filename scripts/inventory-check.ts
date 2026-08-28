@@ -105,12 +105,24 @@ async function main() {
     ok("a no-op adjustment is rejected (delta <> 0)", zeroRejected);
 
     console.log("\n5. Trail reconciles with stock");
+    /*
+     * Only the movements THIS run created.
+     *
+     * The original version replayed every movement ever recorded against the
+     * row, starting from the stock level at the beginning of this run — which
+     * reconciles only while the row has no history. The moment a real sale put
+     * a movement on it, the replay was starting from the wrong balance and the
+     * suite failed on live data it had no business replaying.
+     *
+     * Ordered by id, not created_at: several movements can share a timestamp,
+     * and the bigserial is the only strictly increasing order.
+     */
     const rows = (await c.query(
       `select delta, balance_after from inventory_movements
-        where store_inventory_id=$1 order by created_at`, [line.id]
+        where id = any($1::bigint[]) order by id`, [madeMovements]
     )).rows;
     let running = startStock;
-    let consistent = true;
+    let consistent = rows.length > 0;
     for (const r of rows) {
       running += r.delta;
       if (running !== r.balance_after) consistent = false;
